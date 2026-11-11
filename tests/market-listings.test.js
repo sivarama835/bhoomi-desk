@@ -1,0 +1,43 @@
+const { chromium } = require('playwright');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const APP = path.join(__dirname, '..', 'index.html');
+const FIX = path.join(__dirname, 'fixtures');
+const OUT = process.env.OUT_DIR || os.tmpdir();
+
+(async () => {
+  const xlsx = fs.readFileSync(path.join(FIX,'xlsx-stub.js'),'utf8');
+  const html = fs.readFileSync(APP,'utf8').replace(/<script src="https:[^"]+xlsx[^"]+"><\/script>/,'<script>'+xlsx+'</script>');
+  const now = new Date().toISOString();
+  const data = { leads:[{id:'l1',name:'Buyer One',phone:'9000000001',interest:'Plot',budget:2500000,location:'Vodarevu',stage:'Contacted',createdAt:now,activities:[]}], properties:[], sellers:[], market:[] };
+  const mock = `<script>window.__saved=[];const D=${JSON.stringify(data)};
+  const samp=async()=>({text:"x"});
+  samp.limits=async()=>({maxPromptBytes:262144,images:{maxCount:5,maxInputBytes:5e6,mediaTypes:["image/jpeg","image/png"]}});
+  samp.json=async(input,o)=>{ window.__img=o&&o.images?o.images.length:0; return [{source:"Instagram",kind:"Plot",postedBy:"Owner",location:"Vodarevu",district:"Bapatla",area:200,areaUnit:"sq.yd",priceLakhs:24,facing:"East",approval:"DTCP",approvalNo:"",contactName:"Raju",phone:"98480 11111",postDate:"",url:"https://www.instagram.com/p/abc/",notes:"Beach road"},{kind:"Agricultural land",location:"Chirala",area:50,areaUnit:"cent",priceLakhs:175,phone:""}]; };
+  window.claude={use:async n=>{ if(n==='db'){return {collection:c=>({onSnapshot(cb){setTimeout(()=>cb({docs:(D[c]||[]).map(d=>({id:d.id,data:()=>d})),metadata:{fromCache:false}}),10);return()=>{}},doc:id=>({set:async(b)=>{window.__saved.push([c,id,b])},delete:async()=>{}})})}}
+   if(n==='assets') return {upload:async()=>({id:'c'.repeat(32)}),delete:async()=>({deleted:true})};
+   if(n==='sample') return samp; return null;}};</script>`;
+  const b = await chromium.launch(); const pg = await b.newPage({viewport:{width:1280,height:900}});
+  const errs=[]; pg.on('pageerror',e=>errs.push(e.message));
+  await pg.setContent('<!doctype html><html><head><meta charset=utf8></head><body>'+mock+html+'</body></html>');
+  await pg.waitForTimeout(400);
+  await pg.evaluate(()=>location.hash='#market'); await pg.waitForTimeout(150);
+  await pg.click('[data-act="mkPaste"]'); await pg.fill('#mkText','Vodarevu plots 200 sq yd 24 lakhs call 9848011111'); await pg.click('#mkPGo'); await pg.waitForTimeout(200);
+  console.log('review items:', await pg.$$eval('#mkRev .check', e=>e.length));
+  await pg.click('#mkRev button[type=submit]'); await pg.waitForTimeout(200);
+  console.log('rows:', await pg.$$eval('tr[data-mk]', e=>e.map(x=>x.textContent.replace(/\s+/g,' ').slice(0,110))));
+  await pg.screenshot({path:path.join(OUT,'s-market.png')});
+  await pg.click('tr[data-mk]'); await pg.waitForTimeout(150);
+  console.log('buyers section:', (await pg.textContent('.drawer')).match(/Your buyers[^)]*\)/)[0]);
+  await pg.click('[data-act="mkConvert"]'); await pg.waitForTimeout(200);
+  await pg.keyboard.press('Escape');
+  await pg.click('[data-act="mkShots"]'); await pg.waitForTimeout(150);
+  const SHOT = path.join(OUT,'shot.png'); fs.writeFileSync(SHOT, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==','base64'));
+  await pg.setInputFiles('#mkFiles',SHOT); await pg.click('#mkGo'); await pg.waitForTimeout(400);
+  console.log('img sent:', await pg.evaluate(()=>window.__img), 'review open:', !!await pg.$('#mkRev'));
+  console.log('saved:', JSON.stringify(await pg.evaluate(()=>window.__saved.map(x=>x[0]+':'+(x[2].status||x[2].name||'')))));
+  console.log('errors:', errs);
+  if (errs.length) process.exitCode = 1;
+  await b.close();
+})();

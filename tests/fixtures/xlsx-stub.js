@@ -1,0 +1,1 @@
+window.XLSX={utils:{book_new:()=>({}),json_to_sheet:r=>({rows:r}),aoa_to_sheet:r=>({rows:r}),book_append_sheet:(w,s,n)=>{(window.__sheets=window.__sheets||[]).push([n,(s.rows||[]).length])}},write:()=>new ArrayBuffer(8)};

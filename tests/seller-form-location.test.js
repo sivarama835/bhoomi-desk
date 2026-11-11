@@ -1,0 +1,33 @@
+const { chromium } = require('playwright');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const APP = path.join(__dirname, '..', 'index.html');
+const FIX = path.join(__dirname, 'fixtures');
+const OUT = process.env.OUT_DIR || os.tmpdir();
+
+(async () => {
+  const html = fs.readFileSync(APP,'utf8').replace(/<script src="https:[^"]+xlsx[^"]+"><\/script>/,'');
+  const mock = `<script>window.__saved=[];window.claude={use:async n=>{ if(n==='db'){return {collection:c=>({onSnapshot(cb){setTimeout(()=>cb({docs:[],metadata:{fromCache:false}}),10);return()=>{}},doc:id=>({set:async(b)=>{window.__saved.push([c,b])},delete:async()=>{}})})}} if(n==='assets') return {upload:async()=>({id:'a'.repeat(32)}),delete:async()=>({deleted:true})}; return null;}};</script>`;
+  const b = await chromium.launch(); const ctx = await b.newContext({viewport:{width:420,height:900}, geolocation:{latitude:17.0721,longitude:78.2054}, permissions:['geolocation']});
+  const pg = await ctx.newPage();
+  const errs=[]; pg.on('pageerror',e=>errs.push(e.message));
+  await pg.goto('about:blank'); await pg.setContent('<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width"></head><body>'+mock+html+'</body></html>');
+  await pg.waitForTimeout(400);
+  await pg.evaluate(()=>location.hash='#sellers'); await pg.waitForTimeout(200);
+  await pg.click('#addBtn'); await pg.waitForTimeout(300);
+  await pg.fill('#fs_name','Test Seller'); await pg.fill('#fs_phone','9876543210');
+  await pg.setInputFiles('#mediaInput',path.join(FIX,'gps.jpg')); await pg.waitForTimeout(600);
+  console.log('after photo:', await pg.inputValue('#f_mapLink'), '|', await pg.textContent('#mapHint'));
+  await pg.fill('#f_mapLink',''); await pg.click('#geoBtn'); await pg.waitForTimeout(800);
+  console.log('after geo:', await pg.inputValue('#f_mapLink'), '|', await pg.textContent('#mapHint'));
+  await pg.fill('#f_length','40'); await pg.fill('#f_breadth','45');
+  const vis = await pg.$$eval('#recForm .fsec', els=>els.filter(e=>e.offsetParent).map(e=>e.textContent));
+  console.log('sections:', vis);
+  await pg.screenshot({path:path.join(OUT,'shot-new.png')});
+  await pg.click('#formSave'); await pg.waitForTimeout(300);
+  console.log('saved:', JSON.stringify(await pg.evaluate(()=>window.__saved.map(([c,b])=>[c,b.name||b.plotNo||'',b.sellerId?'linked':'',b.area,b.areaUnit,b.mapLink,(b.media||[]).length]))));
+  console.log('errors:', errs);
+  if (errs.length) process.exitCode = 1;
+  await b.close();
+})();

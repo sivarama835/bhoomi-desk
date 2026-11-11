@@ -1,0 +1,11 @@
+{
+  "name": "bhoomi-desk",
+  "private": true,
+  "description": "CRM for real-estate brokers in India, published as a claude.ai Artifact",
+  "scripts": {
+    "test": "for t in tests/*.test.js; do echo \"== $t\"; node \"$t\" || exit 1; done"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}
